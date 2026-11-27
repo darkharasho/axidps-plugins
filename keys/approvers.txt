@@ -1,3 +1,4 @@
 # Approver public keys: one standard-base64 32-byte Ed25519 key per line. They must equal
 # APPROVER_KEYS in axidps (crates/axidps-plugins/src/keys.rs). CI checks approvals, passes and
 # revoked.json against these.
+8s8nDgXDpesTmYELOAQyo5P3t+ddg+WYMiyICehXovk=

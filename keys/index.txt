@@ -1,0 +1,3 @@
+# The index signing key's public half: standard base64, 32-byte Ed25519. It must equal
+# INDEX_KEYS in axidps (crates/axidps-plugins/src/keys.rs). Its private half is the INDEX_KEY secret.
+wGhPnNLY/SOncXiR8E0MrO/Ho8igCHrhOCYuUApxuSg=
