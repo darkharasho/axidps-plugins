@@ -362,9 +362,6 @@ class PrDecisionTests(unittest.TestCase):
                 self.assertTrue(line.strip().startswith("- `") or line.strip().startswith("`"), line)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class PortFixtures(unittest.TestCase):
     """port-fixtures.json pins AxiAdmin's TypeScript port; it must match what lib produces."""
@@ -394,12 +391,15 @@ class PortFixtures(unittest.TestCase):
     def test_approval_files_verify_and_are_canonical_text(self):
         import port_fixtures
         with open(port_fixtures.PATH, encoding="utf-8") as f:
-            committed = json.load(f)
+            committed = json.load(f)  # key order survives the trip from disk
         self.assertTrue(committed["approval_files"])
         for a in committed["approval_files"]:
-            # The file is written with sorted keys, so `obj` is in sorted order; `text` keeps the
-            # order owner.py writes (the signed body's, then approver and sig).
+            self.assertEqual(list(a["obj"]), ["id", "version", "tree", "verified", "grant",
+                                              "signed", "approver", "sig"])
+            self.assertEqual(json.dumps(a["obj"], indent=2, ensure_ascii=True) + "\n", a["text"])
             self.assertEqual(json.loads(a["text"]), a["obj"])
-            self.assertEqual(a["text"], json.dumps(json.loads(a["text"]), indent=2,
-                                                   ensure_ascii=True) + "\n")
             self.assertTrue(lib.verify("approval", a["obj"], [base64.b64decode(a["pub"])]))
+
+
+if __name__ == "__main__":
+    unittest.main()

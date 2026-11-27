@@ -27,7 +27,7 @@ PATH = os.path.join(HERE, "port-fixtures.json")
 DATE = (2026, 1, 1, 0, 0, 0)
 
 
-def _info(name, kind=None, system=3, mode=0o100644, flags=None):
+def _info(name, kind=None, system=3, mode=0o100644):
     i = zipfile.ZipInfo(name, DATE)
     i.filename = name  # raw: ZipInfo() would cut it at a NUL
     i.compress_type = kind if kind is not None else zipfile.ZIP_DEFLATED
@@ -169,7 +169,7 @@ def build(key_pem=None):
 def main():
     data = build(_throwaway_key())  # the key lives only in this process's memory
     with open(PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=1, sort_keys=True)
+        json.dump(data, f, indent=1)  # insertion order: approval objs keep their signed order
         f.write("\n")
     for z in data["zips"]:
         print(f"{'refused' if z['refused'] else 'ok     '}  {z['name']}: {z['reason']}")
