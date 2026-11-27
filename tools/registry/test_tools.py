@@ -364,3 +364,42 @@ class PrDecisionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortFixtures(unittest.TestCase):
+    """port-fixtures.json pins AxiAdmin's TypeScript port; it must match what lib produces."""
+
+    def test_port_fixtures_are_current(self):
+        import port_fixtures
+        with open(port_fixtures.PATH, encoding="utf-8") as f:
+            committed = json.load(f)
+        built = port_fixtures.build()
+        self.assertEqual(built["comments"], committed["comments"])
+        self.assertEqual(built["approval_files"], committed["approval_files"])
+        # Deflate output can differ between zlib versions, so zip bytes aren't compared; what
+        # the port sees (the unpacked result) is, and the committed bytes must still decode to it.
+        self.assertEqual([{k: v for k, v in z.items() if k != "zip"} for z in built["zips"]],
+                         [{k: v for k, v in z.items() if k != "zip"} for z in committed["zips"]])
+        for z in committed["zips"]:
+            try:
+                files = lib._unpack(base64.b64decode(z["zip"]))
+            except ValueError:
+                self.assertTrue(z["refused"], z["name"])
+                continue
+            self.assertFalse(z["refused"], z["name"])
+            self.assertEqual({p: base64.b64encode(b).decode() for p, b in files.items()},
+                             z["files"], z["name"])
+            self.assertEqual(lib.tree_hash(list(files.items())), z["tree"], z["name"])
+
+    def test_approval_files_verify_and_are_canonical_text(self):
+        import port_fixtures
+        with open(port_fixtures.PATH, encoding="utf-8") as f:
+            committed = json.load(f)
+        self.assertTrue(committed["approval_files"])
+        for a in committed["approval_files"]:
+            # The file is written with sorted keys, so `obj` is in sorted order; `text` keeps the
+            # order owner.py writes (the signed body's, then approver and sig).
+            self.assertEqual(json.loads(a["text"]), a["obj"])
+            self.assertEqual(a["text"], json.dumps(json.loads(a["text"]), indent=2,
+                                                   ensure_ascii=True) + "\n")
+            self.assertTrue(lib.verify("approval", a["obj"], [base64.b64decode(a["pub"])]))
