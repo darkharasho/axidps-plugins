@@ -29,6 +29,7 @@ ICONS = ("chart", "users", "shield", "swords", "activity", "x", "grid", "layers"
          "plug", "download", "columns", "plus")
 BASIC = ("fight",)
 DEEPER = ("world", "position", "squad", "enemies", "textures")
+PRIVILEGED = ("outline",)
 U64_MAX = 2**64 - 1
 
 _SPKI = bytes.fromhex("302a300506032b6570032100")
@@ -431,7 +432,9 @@ def manifest_problems(data, files):
         api, newer_api = a, a != SUPPORTED_API
     permissions = _str_list(o, "permissions", out)
     for p in permissions:
-        if p not in BASIC and p not in DEEPER:
+        if p in PRIVILEGED:
+            out.append(f'permissions: "{p}" is only for plugins built into axidps')
+        elif p not in BASIC and p not in DEEPER:
             out.append(f'permissions: unknown permission "{p}"')
     network = _str_list(o, "network", out)
     for n in network:
@@ -538,7 +541,9 @@ def check_entry(entry, file_id):
         out.append("elevated: list the deeper permissions the plugin needs ([] for none)")
     else:
         for i, x in enumerate(el):
-            if x not in DEEPER:
+            if x in PRIVILEGED:
+                out.append(f'elevated: "{x}" is only for plugins built into axidps')
+            elif x not in DEEPER:
                 out.append(f'elevated: "{x}" is not a deeper permission ({", ".join(DEEPER)})')
             elif x in el[:i]:
                 out.append(f'elevated: "{x}" is listed twice')

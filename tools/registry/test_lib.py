@@ -339,6 +339,12 @@ class ManifestTests(unittest.TestCase):
         for i, edit in enumerate(ok):
             self.assertEqual(self.problems(edit), [], i)
 
+    def test_privileged_permission_refused(self):
+        self.assertEqual(
+            self.problems(lambda m: m.update(permissions=["outline"])),
+            ['permissions: "outline" is only for plugins built into axidps'])
+        self.assertEqual(lib.deeper(["outline", "textures"]), ["textures"])
+
     def test_deeper(self):
         self.assertEqual(lib.deeper(["fight", "world", "textures", "nope"]), ["world", "textures"])
 
@@ -361,6 +367,8 @@ class EntryTests(unittest.TestCase):
         self.assertIn("listed twice", twice)
         [bad] = why(dict(ENTRY, elevated=["fight"]))
         self.assertIn("not a deeper permission", bad)
+        self.assertEqual(why(dict(ENTRY, elevated=["outline"])),
+                         ['elevated: "outline" is only for plugins built into axidps'])
         self.assertEqual(why(dict(ENTRY, elevated=["textures"])), [])
         self.assertEqual(why(dict(ENTRY, elevated=[])), [])
 
