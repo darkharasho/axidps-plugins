@@ -1,0 +1,61 @@
+# Checks a pull request to the registry. Runs on pull_request_target so it can comment, label
+# and enable auto-merge on pull requests from forks, so it must never run their code:
+# - only the base branch is checked out; the pull request's files are read as data (gh api);
+# - each package zip goes into a fresh empty folder and Python runs with -I;
+# - values from the event reach scripts through env:, never inside run: text.
+name: Registry check
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: registry-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    outputs:
+      automerge: ${{ steps.check.outputs.automerge }}
+    steps:
+      - name: Check out the base branch (never the pull request)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Check entries, packages and signatures
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTO_MERGE: ${{ vars.AUTO_MERGE }}
+        run: python3 -I tools/registry/pr_check.py
+
+  merge:
+    # Basic-only, no verification asked, all green, and AUTO_MERGE isn't "off".
+    needs: check
+    if: needs.check.outputs.automerge == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: gh pr merge "$PR" -R "$REPO" --auto --squash --match-head-commit "$HEAD_SHA"

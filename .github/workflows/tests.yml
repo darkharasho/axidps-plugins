@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Unit tests
+        run: python3 -I -m unittest discover tools/registry
+
+      - name: vectors.json is axidps's copy
+        env:
+          URL: ${{ vars.AXIDPS_VECTORS_URL || 'https://raw.githubusercontent.com/darkharasho/axidps/main/crates/axidps-plugins/tests/vectors.json' }}
+        run: |
+          dir="$(mktemp -d)"
+          code="$(curl -sSL -o "$dir/vectors.json" -w '%{http_code}' "$URL")"
+          if [ "$code" = 404 ]; then
+            echo "::warning::$URL isn't there yet; vectors not compared"
+            exit 0
+          fi
+          [ "$code" = 200 ] || { echo "::error::$URL: HTTP $code"; exit 1; }
+          cmp "$dir/vectors.json" tools/registry/vectors.json

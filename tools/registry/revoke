@@ -1,0 +1,9 @@
+#!/usr/bin/env -S python3 -I
+"""tools/registry/revoke: see owner.py. --help for usage."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import owner  # noqa: E402
+
+sys.exit(owner.revoke_main(sys.argv[1:]))
