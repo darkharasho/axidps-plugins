@@ -571,8 +571,37 @@ def package_url(pid, version):
 
 # ---------------------------------------------------------------- packages
 
+UNICODE_PATH_EXTRA = 0x7075
+
+
+def _extra_ids(extra):
+    """The header ids of a zip entry's extra fields."""
+    ids, i = [], 0
+    while i + 4 <= len(extra):
+        hid, size = int.from_bytes(extra[i:i + 2], "little"), int.from_bytes(extra[i + 2:i + 4], "little")
+        ids.append(hid)
+        i += 4 + size
+    return ids
+
+
+def log_safe(s):
+    """`s` for a log line: printable characters only, no line breaks, and no leading `::` that
+    GitHub Actions would read as a workflow command."""
+    s = "".join(c if c.isprintable() else " " for c in str(s))
+    return " " + s if s.lstrip().startswith("::") else s
+
+
 def _components(info):
     """install.rs `components` on the entry's raw name: (parts, is_dir) or raises ValueError."""
+    # The zip crate the client uses replaces the header name with an Info-ZIP Unicode Path
+    # extra field when its CRC matches, so the name checked here could differ from the one
+    # installed: refuse such entries, and any name zipfile itself rewrote.
+    if UNICODE_PATH_EXTRA in _extra_ids(info.extra):
+        raise ValueError(f'entry "{log_safe(info.filename)}": a Unicode Path extra field '
+                         "(names must be in the header only)")
+    if info.orig_filename != info.filename and "\0" not in info.orig_filename:
+        raise ValueError(f'entry "{log_safe(info.orig_filename)}": its name reads differently '
+                         "in different zip readers")
     raw = (info.orig_filename.encode("utf-8") if info.flag_bits & 0x800
            else info.orig_filename.encode("cp437"))
     try:

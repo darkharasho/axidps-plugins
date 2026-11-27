@@ -162,7 +162,7 @@ def main(argv):
         return 1
     generated = a.generated or datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     index, warnings = build(a.root, a.packages, generated)
-    for w in warnings:
+    for w in map(lib.log_safe, warnings):
         print(f"::warning::{w}" if os.environ.get("GITHUB_ACTIONS") else f"warning: {w}",
               file=sys.stderr)
     if a.previous and os.path.isfile(a.previous):

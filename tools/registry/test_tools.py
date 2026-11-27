@@ -254,6 +254,14 @@ class PrDecisionTests(unittest.TestCase):
         self.assertEqual([f["filename"] for f in c["other"]],
                          ["tools/registry/lib.py", "plugins/sub/x.json"])
 
+    def test_file_list_must_be_complete_and_small(self):
+        self.assertEqual(pr_check.file_count_problems(3, 3), [])
+        self.assertEqual(pr_check.file_count_problems(100, 100), [])
+        # GitHub's file list stops at 3000: a short list must never pass as complete.
+        self.assertTrue(pr_check.file_count_problems(3000, 3001))
+        self.assertTrue(pr_check.file_count_problems(99, 100))
+        self.assertTrue(pr_check.file_count_problems(101, 101))
+
     def test_ownership(self):
         old = dict(ENTRY, maintainers=["helper"])
         self.assertEqual(pr_check.ownership_problems(None, ENTRY, "someone"), [])

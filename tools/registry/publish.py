@@ -20,7 +20,7 @@ from pr_check import Missing, gh, gh_json  # noqa: E402
 
 
 def warn(msg):
-    print(f"::warning::{msg}")
+    print(f"::warning::{lib.log_safe(msg)}")
 
 
 def mirrored(repo, tag, name, packages):
@@ -63,7 +63,7 @@ def mirror(repo, entry, v, packages, sha):
         gh("release", "create", tag, named, "-R", repo, "--target", sha, "--latest=false",
            "--title", f"{pid} {ver}", "--notes", notes)
         shutil.copy(named, os.path.join(packages, tag + ".zip"))
-    print(f"mirrored {pid} {ver}")
+    print(lib.log_safe(f"mirrored {pid} {ver}"))
 
 
 def entries():

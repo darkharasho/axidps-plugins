@@ -106,6 +106,18 @@ def signed_file_problems(path, obj, keys, base_seq):
     return why
 
 
+MAX_PR_FILES = 100
+
+
+def file_count_problems(listed, changed_files):
+    """The file list must be complete (GitHub caps it at 3000) and small."""
+    if changed_files > MAX_PR_FILES:
+        return [f"this pull request changes {changed_files} files; at most {MAX_PR_FILES}"]
+    if listed != changed_files:
+        return [f"GitHub listed {listed} of {changed_files} changed files"]
+    return []
+
+
 def code(s):
     """Untrusted text as one inline code span (no backticks, no line breaks), so it can't
     format, link or mention anyone."""
@@ -227,8 +239,12 @@ def check_version(env, entry, v):
         entry_path = os.path.join(edir, "entry.json")
         with open(entry_path, "w", encoding="utf-8") as f:
             json.dump(entry, f)
+        # No token in the checker's environment.
+        env_min = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                   "LANG": os.environ.get("LANG", "C.UTF-8")}
         out = subprocess.run([sys.executable, "-I", os.path.join(HERE, "check.py"), zip_path,
-                              entry_path, v["version"]], capture_output=True, check=False)
+                              entry_path, v["version"]], capture_output=True, check=False,
+                             env=env_min)
     try:
         res = json.loads(out.stdout)
     except ValueError:
@@ -260,14 +276,19 @@ def checklist():
 
 def main(env):
     author = env["PR_AUTHOR"]
-    files = gh_lines(f"repos/{env['REPO']}/pulls/{env['PR']}/files?per_page=100",
-                     "--jq", ".[] | {filename, status}")
+    changed = int(gh_json(f"repos/{env['REPO']}/pulls/{env['PR']}")["changed_files"])
+    files = [] if changed > MAX_PR_FILES else gh_lines(
+        f"repos/{env['REPO']}/pulls/{env['PR']}/files?per_page=100",
+        "--jq", ".[] | {filename, status}")
+    problems = file_count_problems(len(files), changed)
+    if problems:
+        files = []
     c = classify(files)
-    problems, results, deeper, verify = [], [], [], False
+    results, deeper, verify = [], [], False
     if c["other"]:
         names = ", ".join(f["filename"] for f in c["other"])
         if author.lower() == env["REPO"].split("/")[0].lower():
-            print(f"owner's change outside the registry data, review by hand: {names}")
+            print(lib.log_safe(f"owner's change outside the registry data, review by hand: {names}"))
         else:
             problems.append(f"only plugins/<id>.json can change in a pull request: {names}")
 
@@ -327,7 +348,7 @@ def main(env):
         with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
             out.write(f"automerge={'true' if merge else 'false'}\n")
     for p in all_problems:
-        print(f"problem: {p}")
+        print(lib.log_safe(f"problem: {p}"))
     return 1 if all_problems else 0
 
 

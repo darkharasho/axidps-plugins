@@ -11,6 +11,7 @@ import struct
 import tempfile
 import unittest
 import zipfile
+import zlib
 
 import lib
 
@@ -52,7 +53,14 @@ def good_files(manifest=None):
     ]
 
 
-def zip_of(files, symlink=None):
+def unicode_path_extra(header_name, real_name):
+    """An Info-ZIP Unicode Path extra field (0x7075) naming `real_name`, with the CRC of the
+    header name so that readers which honour it (the zip crate does) use `real_name`."""
+    data = b"\x01" + struct.pack("<I", zlib.crc32(header_name.encode())) + real_name.encode()
+    return struct.pack("<HH", 0x7075, len(data)) + data
+
+
+def zip_of(files, symlink=None, unicode_path=None):
     """A zip of `files` (names written raw; a trailing `/` makes a folder entry)."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -68,6 +76,10 @@ def zip_of(files, symlink=None):
             info.create_system = 3
             info.external_attr = 0o120777 << 16
             z.writestr(info, symlink[1])
+        if unicode_path:
+            info = zipfile.ZipInfo(unicode_path[0])
+            info.extra = unicode_path_extra(*unicode_path)
+            z.writestr(info, b"x")
     return buf.getvalue()
 
 
@@ -216,36 +228,42 @@ class PackageTests(unittest.TestCase):
     def test_hostile_zip_cases(self):
         many = [(f"f/{i}.txt", b"x") for i in range(lib.MAX_FILES)]
         cases = {
-            "dotdot": zip_of(good_files() + [("../x", b"x")]),
-            "inner dotdot": zip_of(good_files() + [("js/../../x", b"x")]),
-            "absolute": zip_of(good_files() + [("/tmp/x", b"x")]),
-            "drive letter": zip_of(good_files() + [("C:/x", b"x")]),
-            "backslash": zip_of(good_files() + [("js\\x.js", b"x")]),
-            "nul": zip_of(good_files() + [("a\0b", b"x")]),
-            "control": zip_of(good_files() + [("a\x1bb", b"x")]),
-            "empty component": zip_of(good_files() + [("js//x.js", b"x")]),
-            "dot component": zip_of(good_files() + [("./x.js", b"x")]),
-            "case duplicate": zip_of(good_files() + [("Card.html", b"x")]),
-            "case duplicate folder": zip_of(good_files() + [("JS/b.js", b"x")]),
-            "file over folder": zip_of(good_files() + [("js", b"x")]),
-            "symlink": zip_of(good_files(), symlink=("link", b"/etc/passwd")),
-            "bomb": zip_of(good_files() + [("zeros.bin", bytes(lib.MAX_UNPACKED + 1024))]),
-            "lying bomb": lying_bomb(10),
-            "too many files": zip_of(good_files() + many),
-            "not a zip": b"PK nope",
-            "no manifest": zip_of(good_files()[1:]),
-            "manifest not at root": zip_of([("x/" + n, d) for n, d in good_files()]),
-            "wrong id": zip_of(good_files({"id": "someone.other"})),
-            "wrong version": zip_of(good_files({"version": "1.0.1"})),
-            "bad manifest": zip_of(good_files({"permissions": ["fight", "root"]})),
-            "missing entry file": zip_of(good_files({"windows": [
-                {"id": "card", "title": "Card", "entry": "nope.html"}]})),
-            "sdk folder": zip_of(good_files() + [("_sdk/x.js", b"x")]),
-            "local host": zip_of(good_files({"network": ["localhost"]})),
+            "dotdot": (zip_of(good_files() + [("../x", b"x")]), "a . or .. component"),
+            "inner dotdot": (zip_of(good_files() + [("js/../../x", b"x")]), "a . or .. component"),
+            "absolute": (zip_of(good_files() + [("/tmp/x", b"x")]), "an absolute path"),
+            "drive letter": (zip_of(good_files() + [("C:/x", b"x")]), "a drive letter"),
+            "backslash": (zip_of(good_files() + [("js\\x.js", b"x")]), "\\ in the name"),
+            "nul": (zip_of(good_files() + [("a\0b", b"x")]), "control characters"),
+            "control": (zip_of(good_files() + [("a\x1bb", b"x")]), "control characters"),
+            "empty component": (zip_of(good_files() + [("js//x.js", b"x")]), "an empty path component"),
+            "dot component": (zip_of(good_files() + [("./x.js", b"x")]), "a . or .. component"),
+            "case duplicate": (zip_of(good_files() + [("Card.html", b"x")]), "a duplicate path"),
+            "case duplicate folder": (zip_of(good_files() + [("JS/b.js", b"x")]), "a duplicate path"),
+            "file over folder": (zip_of(good_files() + [("js", b"x")]), "a duplicate path"),
+            "symlink": (zip_of(good_files(), symlink=("link", b"/etc/passwd")), "not a plain file"),
+            "unicode path field": (zip_of(good_files(), unicode_path=("ok.js", "../../evil.js")),
+                                   "Unicode Path extra field"),
+            "bomb": (zip_of(good_files() + [("zeros.bin", bytes(lib.MAX_UNPACKED + 1024))]),
+                     "unpacks to more than"),
+            "lying bomb": (lying_bomb(10), "CRC"),
+            "too many files": (zip_of(good_files() + many), "more than 500 files"),
+            "not a zip": (b"PK nope", "not a zip"),
+            "no manifest": (zip_of(good_files()[1:]), "no axidps-plugin.json at its root"),
+            "manifest not at root": (zip_of([("x/" + n, d) for n, d in good_files()]),
+                                     "no axidps-plugin.json at its root"),
+            "wrong id": (zip_of(good_files({"id": "someone.other"})), "the entry says"),
+            "wrong version": (zip_of(good_files({"version": "1.0.1"})), "the entry says"),
+            "bad manifest": (zip_of(good_files({"permissions": ["fight", "root"]})),
+                             'unknown permission "root"'),
+            "missing entry file": (zip_of(good_files({"windows": [
+                {"id": "card", "title": "Card", "entry": "nope.html"}]})), '"nope.html" not found'),
+            "sdk folder": (zip_of(good_files() + [("_sdk/x.js", b"x")]), '"_sdk" folder'),
+            "local host": (zip_of(good_files({"network": ["localhost"]})), "public host name"),
         }
-        for what, data in cases.items():
+        for what, (data, reason) in cases.items():
             manifest, tree, sha, problems = self.check(data)
-            self.assertTrue(problems, what)
+            self.assertTrue(any(reason in p for p in problems), f"{what}: {problems}")
+            self.assertIsNone(manifest, what)
         # The reserved prefix is refused whatever the package says.
         files = good_files({"id": "axidps.card"})
         entry = dict(ENTRY, id="axidps.card")
@@ -255,6 +273,21 @@ class PackageTests(unittest.TestCase):
         big = os.urandom(lib.ZIP_CAP + 1)
         data = zip_of(good_files() + [("big.bin", big)])
         self.assertTrue(any("bytes" in p for p in self.check(data)[3]))
+
+    def test_extra_fields_other_than_unicode_path_are_fine(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for name, data in good_files():
+                info = zipfile.ZipInfo(name)
+                info.extra = struct.pack("<HH", 0x5455, 5) + b"\x01\0\0\0\0"  # timestamp
+                z.writestr(info, data)
+        self.assertEqual(self.check(buf.getvalue())[3], [])
+
+    def test_log_safe(self):
+        self.assertEqual(lib.log_safe("a\nb\x1b"), "a b ")
+        self.assertEqual(lib.log_safe("::error::x"), " ::error::x")
+        self.assertEqual(lib.log_safe("\n::add-mask::x"), "  ::add-mask::x")
+        self.assertEqual(lib.log_safe("ok :: fine"), "ok :: fine")
 
     def test_utf8_names_hash_as_utf8(self):
         files = good_files() + [("café.txt", b"x")]
