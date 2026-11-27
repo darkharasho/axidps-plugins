@@ -118,6 +118,15 @@ def file_count_problems(listed, changed_files):
     return []
 
 
+def elevated_problems(entry, deeper):
+    """The entry's `elevated` must equal the deeper permissions the manifest asks for."""
+    asked, listed = list(deeper), list(entry["elevated"])
+    if set(asked) == set(listed):
+        return []
+    return [f"the manifest asks for {', '.join(asked) or 'none'}; "
+            f"elevated lists {', '.join(listed) or 'none'}"]
+
+
 def code(s):
     """Untrusted text as one inline code span (no backticks, no line breaks), so it can't
     format, link or mention anyone."""
@@ -139,6 +148,7 @@ def comment(results, problems):
         if r.get("permissions") is not None:
             lines.append("- permissions: " + (", ".join(code(p) for p in r["permissions"]) or "none"))
             lines.append("- network: " + (", ".join(code(n) for n in r["network"]) or "none"))
+            lines.append("- elevated: " + (", ".join(code(e) for e in r.get("elevated", [])) or "none"))
         if r.get("deeper") and not r.get("approved"):
             lines.append("- deeper permissions " + ", ".join(code(d) for d in r["deeper"])
                          + ": **needs approval to load**. It can be listed, but it won't load "
@@ -317,6 +327,9 @@ def main(env):
         verify = verify or new.get("verify") is True
         for v in added:
             r = check_version(env, new, v)
+            r["elevated"] = new["elevated"]
+            if "deeper" in r:
+                r["problems"] += elevated_problems(new, r["deeper"])
             results.append(r)
             deeper += r.get("deeper") or []
 
