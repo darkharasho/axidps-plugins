@@ -1,0 +1,193 @@
+{
+  "tree": [
+    {
+      "files": [],
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "files": [
+        [
+          "a/b.js",
+          "ZXhwb3J0IGNvbnN0IGIgPSAxOwo="
+        ],
+        [
+          "a.js",
+          "YSgpOwo="
+        ]
+      ],
+      "hash": "055c301a1623c2ef11377bc4584ceb17487ebe9c879fd4a8f986fea3bc76b6ea"
+    },
+    {
+      "files": [
+        [
+          "index.html",
+          "PCFkb2N0eXBlIGh0bWw+DQo8cD5oaTwvcD4NCg=="
+        ],
+        [
+          "empty.txt",
+          ""
+        ],
+        [
+          "axidps-plugin.json",
+          "eyJpZCI6ImV4YW1wbGUuaGVsbG8ifQ=="
+        ]
+      ],
+      "hash": "bdc8b236f8b10c1f104abc5a0eb493ca73c7f67fffea117a3a26c85cd7157f9e"
+    },
+    {
+      "files": [
+        [
+          "z.txt",
+          "eg=="
+        ],
+        [
+          "A.txt",
+          "dXBwZXI="
+        ],
+        [
+          "a-b.js",
+          "ZGFzaA=="
+        ],
+        [
+          "a/b/c.css",
+          "Ym9keXt9DQo="
+        ],
+        [
+          "a.js",
+          "AP8B"
+        ]
+      ],
+      "hash": "03c6dd5bd00767b6c5bd9f7a47b7f6f3cd5ff45e8b245b5b3a37959d5e5ccde6"
+    }
+  ],
+  "canonical": [
+    {
+      "in": {
+        "b": 1,
+        "a": "x"
+      },
+      "out": "{\"a\":\"x\",\"b\":1}"
+    },
+    {
+      "in": {
+        "z": [
+          3,
+          2,
+          {
+            "y": null,
+            "x": true
+          }
+        ],
+        "a": {
+          "d": false,
+          "c": 0
+        }
+      },
+      "out": "{\"a\":{\"c\":0,\"d\":false},\"z\":[3,2,{\"x\":true,\"y\":null}]}"
+    },
+    {
+      "in": [],
+      "out": "[]"
+    },
+    {
+      "in": {},
+      "out": "{}"
+    },
+    {
+      "in": "plain ~ ascii",
+      "out": "\"plain ~ ascii\""
+    },
+    {
+      "in": "quote \" and back \\ slash",
+      "out": "\"quote \\\" and back \\\\ slash\""
+    },
+    {
+      "in": 18446744073709551615,
+      "out": "18446744073709551615"
+    },
+    {
+      "in": "\u00e9",
+      "out": null
+    },
+    {
+      "in": 1.5,
+      "out": null
+    },
+    {
+      "in": -1,
+      "out": null
+    },
+    {
+      "in": "\n",
+      "out": null
+    },
+    {
+      "in": "\t",
+      "out": null
+    },
+    {
+      "in": "\u007f",
+      "out": null
+    },
+    {
+      "in": {
+        "\u00e9": 1
+      },
+      "out": null
+    },
+    {
+      "in": [
+        1,
+        2.0
+      ],
+      "out": null
+    }
+  ],
+  "signed": [
+    {
+      "kind": "approval",
+      "object": {
+        "approver": "fe812c12f3ab4ce6",
+        "id": "example.hello",
+        "version": "1.0.0",
+        "tree": "bdc8b236f8b10c1f104abc5a0eb493ca73c7f67fffea117a3a26c85cd7157f9e",
+        "grant": [
+          "network"
+        ],
+        "issued": 1764115200,
+        "sig": "JJn8KMOLxJGFt8gDiHfFmnPx1yPapDrBsRu48Gf2ZETw8REynY1tV0RD/MOpE8FsCjrholNb4u7+5Xuv1hd6Dw=="
+      },
+      "pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="
+    },
+    {
+      "kind": "pass",
+      "object": {
+        "approver": "fe812c12f3ab4ce6",
+        "key": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+        "ids": [
+          "example.*"
+        ],
+        "grant": [
+          "network",
+          "textures"
+        ],
+        "expires": 1795651200,
+        "sig": "6hHTxM3TKfVR/+f8yJfIXOPyB5j6rJJJk2hdrAXUj+XYe1rWznaROCAKDDqILZkcZ6k+d6KOAt0WGyJzDOrzBA=="
+      },
+      "pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="
+    },
+    {
+      "kind": "revoked",
+      "object": {
+        "approver": "fe812c12f3ab4ce6",
+        "seq": 1,
+        "trees": [
+          "bdc8b236f8b10c1f104abc5a0eb493ca73c7f67fffea117a3a26c85cd7157f9e"
+        ],
+        "keys": [],
+        "sig": "SLdLURD9guozoEUozUuKzAnz03h5/XLfC93dW3eVMkQlqGcnq72HHxIL+mr7+QlqyLGr4ZZhXW8XEe1SKKIeCQ=="
+      },
+      "pub": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="
+    }
+  ]
+}
