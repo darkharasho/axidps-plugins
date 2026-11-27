@@ -5,7 +5,8 @@
   "repo": "darkharasho/axidps-tag-colours",
   "description": "Recolours, outlines or enlarges commander tags, squad markers and target markers so they are easier to tell apart.",
   "icon": "sliders",
-  "versions": [{"version": "0.1.0", "tag": "v0.1.0", "asset": "tag-colours.zip"}],
+  "versions": [{"version": "0.1.0", "tag": "v0.1.0", "asset": "tag-colours.zip"},
+               {"version": "0.1.1", "tag": "v0.1.1", "asset": "tag-colours.zip"}],
   "elevated": ["textures"],
   "verify": true
 }
