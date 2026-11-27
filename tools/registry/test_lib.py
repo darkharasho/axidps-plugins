@@ -40,6 +40,7 @@ MANIFEST = {
 
 ENTRY = {
     "id": "someone.card", "owner": "someone", "repo": "someone/card",
+    "elevated": [],
     "versions": [{"version": "1.0.0", "tag": "v1.0.0", "asset": "card.zip"}],
 }
 
@@ -348,6 +349,20 @@ class EntryTests(unittest.TestCase):
         full = dict(ENTRY, maintainers=["helper-1"], verify=True, description="Big DPS.",
                     icon="chart")
         self.assertEqual(lib.check_entry(full, "someone.card"), [])
+
+    def test_entry_needs_elevated(self):
+        def why(entry):
+            return lib.check_entry(entry, "someone.card")
+        missing = "elevated: list the deeper permissions the plugin needs ([] for none)"
+        no = {k: v for k, v in ENTRY.items() if k != "elevated"}
+        self.assertEqual(why(no), [missing])
+        self.assertEqual(why(dict(ENTRY, elevated="textures")), [missing])
+        [twice] = why(dict(ENTRY, elevated=["textures", "textures"]))
+        self.assertIn("listed twice", twice)
+        [bad] = why(dict(ENTRY, elevated=["fight"]))
+        self.assertIn("not a deeper permission", bad)
+        self.assertEqual(why(dict(ENTRY, elevated=["textures"])), [])
+        self.assertEqual(why(dict(ENTRY, elevated=[])), [])
 
     def test_bad_entries(self):
         v = ENTRY["versions"][0]

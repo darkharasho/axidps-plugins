@@ -502,7 +502,7 @@ def _window(w, i, out):
 # ---------------------------------------------------------------- registry entries
 
 ENTRY_FIELDS = ("id", "owner", "maintainers", "repo", "description", "icon", "verify",
-                "versions")
+                "elevated", "versions")
 
 
 def check_entry(entry, file_id):
@@ -533,6 +533,15 @@ def check_entry(entry, file_id):
         out.append(f"icon: must be one of {', '.join(ICONS)}")
     if not isinstance(entry.get("verify", False), bool):
         out.append("verify: must be true or false")
+    el = entry.get("elevated")
+    if not isinstance(el, list):
+        out.append("elevated: list the deeper permissions the plugin needs ([] for none)")
+    else:
+        for i, x in enumerate(el):
+            if x not in DEEPER:
+                out.append(f'elevated: "{x}" is not a deeper permission ({", ".join(DEEPER)})')
+            elif x in el[:i]:
+                out.append(f'elevated: "{x}" is listed twice')
     vs = entry.get("versions")
     if not isinstance(vs, list) or not vs:
         out.append("versions: must be a non-empty list")
