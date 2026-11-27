@@ -31,7 +31,8 @@ Add `plugins/<id>.json`, with the file name matching the id:
   "description": "Your DPS, big.",
   "icon": "chart",
   "versions": [{"version": "1.2.0", "tag": "v1.2.0", "asset": "dps-card.zip"}],
-  "verify": false
+  "verify": false,
+  "elevated": ["textures"]
 }
 ```
 
@@ -40,6 +41,8 @@ Add `plugins/<id>.json`, with the file name matching the id:
   hand it to someone else.
 - `versions` are permanent once merged. To fix a release, publish a new version and add it to
   the list.
+- `elevated` is required: the deeper permissions the plugin needs (see below), or `[]` for
+  none. It must equal the deeper permissions in each new version's manifest.
 - `description` (up to 300 characters) and `icon` are optional. `icon` is one of `chart`,
   `users`, `shield`, `swords`, `activity`, `x`, `grid`, `layers`, `sliders`, `plug`,
   `download`, `columns` or `plus`. Without it, the first window's icon is used.
@@ -60,6 +63,11 @@ Set `"verify": true` to ask for verification. The owner reviews the package agai
 The deeper permissions are `world`, `position`, `squad`, `enemies` and `textures`. A version
 that asks for any of them can still be listed, but it won't load until the owner approves
 that exact version and grants them.
+
+List the ones your plugin needs in the entry's `"elevated"`, for example
+`"elevated": ["textures"]`, or `[]` if it needs none. CI fails a new version whose manifest asks
+for a different set of deeper permissions than `elevated` lists. The owner's approval grants
+what `elevated` lists by default.
 
 ## Developer passes
 

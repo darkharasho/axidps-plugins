@@ -61,6 +61,7 @@ def _listing(entry, packages, warnings):
         "description": entry.get("description", ""),
         "icon": entry.get("icon") or newest["windows"][0]["icon"],
         "repo": entry["repo"],
+        "elevated": entry["elevated"],
         "versions": versions,
     }
 

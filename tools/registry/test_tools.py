@@ -72,7 +72,7 @@ class BuildIndexTests(unittest.TestCase):
         self.assertEqual(index["generated"], "2026-11-26T12:00:00Z")
         [listing] = index["plugins"]
         self.assertEqual(set(listing), {"id", "name", "author", "description", "icon", "repo",
-                                        "versions"})
+                                        "elevated", "versions"})
         self.assertEqual((listing["id"], listing["name"], listing["author"], listing["icon"],
                           listing["repo"], listing["description"]),
                          ("someone.card", "Card", "Someone", "chart", "someone/card",
@@ -153,6 +153,13 @@ class BuildIndexTests(unittest.TestCase):
                          "2026-11-27T00:00:00Z")
 
 
+    def test_index_carries_elevated(self):
+        self.r.entry(dict(ENTRY, elevated=["textures"]))
+        index, _ = self.r.build()
+        [listing] = index["plugins"]
+        self.assertEqual(listing["elevated"], ["textures"])
+
+
 class OwnerTests(unittest.TestCase):
     MANIFEST = {"id": "someone.card", "version": "1.0.0", "permissions": ["fight", "world"]}
 
@@ -164,6 +171,15 @@ class OwnerTests(unittest.TestCase):
         self.assertEqual(lib.shape_problems("approval", body), [])
         plain = owner.approval_body("someone.card", "1.0.0", "a" * 64, self.MANIFEST, [], True, TODAY)
         self.assertEqual((plain["verified"], plain["grant"]), (False, []))
+
+    def test_grant_defaults_to_elevated(self):
+        e = {"elevated": ["textures"]}
+        self.assertEqual(owner.grant_for(e, [], False), ["textures"])
+        self.assertEqual(owner.grant_for(e, ["textures"], False), ["textures"])
+        with self.assertRaises(owner.Refused) as ctx:
+            owner.grant_for(e, ["world"], False)
+        self.assertIn("isn't in elevated", str(ctx.exception))
+        self.assertEqual(owner.grant_for(e, [], True), [])
 
     def test_grant_with_no_verify_is_refused(self):
         with self.assertRaises(owner.Refused):
@@ -316,6 +332,21 @@ class PrDecisionTests(unittest.TestCase):
                                  "passes": []}, SEED7)
         self.assertEqual(pr_check.signed_file_problems("revoked.json", r, keys, 1), [])
         self.assertTrue(pr_check.signed_file_problems("revoked.json", r, keys, 2))
+
+    def test_elevated_matches_manifest(self):
+        self.assertEqual(
+            pr_check.elevated_problems({"elevated": ["textures"]}, ["textures", "world"]),
+            ["the manifest asks for textures, world; elevated lists textures"])
+        self.assertEqual(
+            pr_check.elevated_problems({"elevated": ["world", "textures"]}, ["textures", "world"]), [])
+        self.assertEqual(pr_check.elevated_problems({"elevated": []}, []), [])
+
+    def test_comment_shows_elevated(self):
+        base = {"id": "a.b.c", "version": "1.0.0", "permissions": ["fight", "textures"],
+                "network": []}
+        self.assertIn("- elevated: `textures`",
+                      pr_check.comment([dict(base, elevated=["textures"])], []))
+        self.assertIn("- elevated: none", pr_check.comment([dict(base, elevated=[])], []))
 
     def test_comment_keeps_untrusted_text_in_code(self):
         body = pr_check.comment([{

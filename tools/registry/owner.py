@@ -43,6 +43,17 @@ def approval_body(pid, version, tree, manifest, grant, no_verify, today):
             "grant": list(grant), "signed": today}
 
 
+def grant_for(entry, explicit, no_verify):
+    """The deeper permissions an approval grants: the entry's `elevated` unless --grant says
+    otherwise (and then only names the entry lists)."""
+    if no_verify:
+        return list(explicit)
+    for g in explicit:
+        if g not in entry["elevated"]:
+            raise Refused(f'"{g}" isn\'t in elevated in the entry')
+    return list(explicit) or list(entry["elevated"])
+
+
 def _valid_pattern(p):
     if p.endswith(".*"):
         prefix = p[:-2]
@@ -222,7 +233,7 @@ def approve_args(argv):
     ap = argparse.ArgumentParser(prog="approve", description="Sign an approval for one version.")
     ap.add_argument("id")
     ap.add_argument("version")
-    ap.add_argument("--grant", default="", help="deeper permissions to allow, comma-separated")
+    ap.add_argument("--grant", default="", help="deeper permissions to allow, comma-separated (default: the entry's elevated)")
     ap.add_argument("--no-verify", action="store_true",
                     help="approve without the Verified badge (no --grant)")
     ap.add_argument("--zip", help="check this local zip instead of downloading the package")
@@ -237,7 +248,8 @@ def approve_args(argv):
 def _approve(argv):
     a = approve_args(argv)
     manifest, tree, sha, source = _checked_package(a.id, a.version, a.zip)
-    body = approval_body(a.id, a.version, tree, manifest, a.grant, a.no_verify, _today())
+    grant = grant_for(_load_entry(a.id), a.grant, a.no_verify)
+    body = approval_body(a.id, a.version, tree, manifest, grant, a.no_verify, _today())
     summary = (f"{a.id} {a.version} from {source}\n  sha256 {sha}\n  tree   {tree}\n"
                f"  permissions: {', '.join(manifest['permissions']) or 'none'}\n"
                f"  network: {', '.join(manifest['network']) or 'none'}")
