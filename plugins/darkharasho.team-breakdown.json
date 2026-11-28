@@ -1,0 +1,11 @@
+{
+  "id": "darkharasho.team-breakdown",
+  "owner": "darkharasho",
+  "maintainers": [],
+  "repo": "darkharasho/axidps-team-breakdown",
+  "description": "Shows how many players fought this fight, by squad, allies and each enemy team, and how many of each specialization.",
+  "icon": "users",
+  "versions": [{"version": "0.1.0", "tag": "v0.1.0", "asset": "team-breakdown.zip"}],
+  "elevated": ["enemies"],
+  "verify": true
+}
