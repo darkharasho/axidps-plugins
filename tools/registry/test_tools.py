@@ -198,6 +198,34 @@ class StandingTests(unittest.TestCase):
         self.assertTrue(lib.shape_problems("revoked", dict(base, standing=[{"id": "a.b"}])))
 
 
+class StandingOwnerTests(unittest.TestCase):
+    def test_standing_body_defaults_and_sorts(self):
+        body = owner.standing_body("someone.card", ["world", "textures", "world"], TODAY)
+        self.assertEqual(body, {"id": "someone.card", "grant": ["textures", "world"], "signed": TODAY})
+        self.assertEqual(lib.shape_problems("standing", body), [])
+
+    def test_standing_body_refuses_empty(self):
+        with self.assertRaises(owner.Refused):
+            owner.standing_body("someone.card", [], TODAY)
+        with self.assertRaises(owner.Refused):
+            owner.standing_body("someone.card", ["fight"], TODAY)
+
+    def test_approve_args_standing_without_version(self):
+        a = owner.approve_args(["someone.card", "--standing"])
+        self.assertTrue(a.standing)
+        self.assertIsNone(a.version)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            owner.approve_args(["someone.card"])
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            owner.approve_args(["someone.card", "1.0.0", "--standing"])
+
+    def test_revoke_standing_entry(self):
+        body = owner.revoke_body({"seq": 3}, "standing", {"id": "someone.card"}, "taken over")
+        self.assertEqual(body["standing"], [{"id": "someone.card", "reason": "taken over"}])
+        self.assertEqual(body["seq"], 4)
+        self.assertEqual(lib.shape_problems("revoked", body), [])
+
+
 class AutoReleaseTests(unittest.TestCase):
     ENTRY = dict(ENTRY, maintainers=["helper"])
 

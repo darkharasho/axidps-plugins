@@ -10,6 +10,7 @@ The plugin registry for the [axidps](https://github.com/darkharasho/axidps) plug
 ```
 plugins/<id>.json                one per plugin, edited by its author
 approvals/<id>/<version>.json    approvals, signed by the owner
+standing/<id>.json               standing approvals (a plugin's permissions, every version), signed by the owner
 passes/<github login>.json       developer passes, signed by the owner
 revoked.json                     revocations, signed by the owner (seq only goes up)
 keys/approvers.txt               the approver public keys CI checks signatures against
@@ -19,7 +20,9 @@ tools/registry/                  CI checks and the owner's signing tools
 ## The index
 
 On every push to main, and hourly, CI mirrors each new version's zip to a release
-`<id>@<version>`. It then builds `index.json` and its signature `index.json.sig`, and publishes
+`<id>@<version>`. It also lists new releases from each plugin's own repository that ask for
+nothing beyond its newest listed version; their mirror release's notes carry an
+`auto-listed:` line, which is the record that they are listed (see docs/publishing.md). It then builds `index.json` and its signature `index.json.sig`, and publishes
 both as assets of the release `index`:
 
 ```
@@ -28,8 +31,8 @@ https://github.com/darkharasho/axidps-plugins/releases/download/index/index.json
 ```
 
 The index key (the Actions secret `INDEX_KEY`) signs the index. It vouches for listings only
-and can never grant more than basic permissions. Approvals, passes and `revoked.json` carry
-their own approver signatures, and axidps checks those itself.
+and can never grant more than basic permissions. Approvals, standing approvals, passes and
+`revoked.json` carry their own approver signatures, and axidps checks those itself.
 
 ## Owner tools
 
@@ -40,10 +43,12 @@ written to disk.
 
 ```
 tools/registry/approve <id> <version> [--grant world,position] [--no-verify]
+tools/registry/approve <id> --standing [--grant textures]
 tools/registry/pass <login> --key <base64> --ids someone.*,other.id --grant world [--days 90]
 tools/registry/revoke version <id> <version> --reason "..."
 tools/registry/revoke verification <id> <version> --reason "..."
 tools/registry/revoke id <id> --reason "..."
+tools/registry/revoke standing <id> --reason "..."
 tools/registry/revoke pass <login> --reason "..."
 ```
 

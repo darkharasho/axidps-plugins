@@ -81,10 +81,22 @@ REVOKE_FIELDS = {
     "version": ("id", "version", "tree"),
     "verification": ("id", "version"),
     "id": ("id",),
+    "standing": ("id",),
     "pass": ("login", "key"),
 }
 REVOKE_LISTS = {"version": "versions", "verification": "verifications", "id": "ids",
-                "pass": "passes"}
+                "pass": "passes", "standing": "standing"}
+
+
+def standing_body(pid, grant, today):
+    """A standing approval: `pid` may have the deeper permissions `grant` in every version."""
+    grant = sorted(set(grant))
+    if not grant:
+        raise Refused("a standing approval needs at least one deeper permission")
+    bad = [g for g in grant if g not in lib.DEEPER]
+    if bad:
+        raise Refused(f"not deeper permissions: {', '.join(bad)}")
+    return {"id": pid, "grant": grant, "signed": today}
 
 
 def revoke_body(revoked, what, fields, reason):
@@ -230,15 +242,23 @@ def _run(fn, argv):
 # ---------------------------------------------------------------- the commands
 
 def approve_args(argv):
-    ap = argparse.ArgumentParser(prog="approve", description="Sign an approval for one version.")
+    ap = argparse.ArgumentParser(
+        prog="approve", description="Sign an approval for one version, or with --standing for "
+                                    "every version that asks for nothing beyond --grant.")
     ap.add_argument("id")
-    ap.add_argument("version")
+    ap.add_argument("version", nargs="?")
+    ap.add_argument("--standing", action="store_true",
+                    help="approve the permissions for every version (no version argument)")
     ap.add_argument("--grant", default="", help="deeper permissions to allow, comma-separated (default: the entry's elevated)")
     ap.add_argument("--no-verify", action="store_true",
                     help="approve without the Verified badge (no --grant)")
     ap.add_argument("--zip", help="check this local zip instead of downloading the package")
     a = ap.parse_args(argv)
     a.grant = [g for g in a.grant.split(",") if g]
+    if a.standing and (a.version or a.no_verify or a.zip):
+        ap.error("--standing takes no version, --no-verify or --zip")
+    if not a.standing and not a.version:
+        ap.error("give a version, or --standing")
     if a.grant and a.no_verify:
         ap.error("--grant can't be used with --no-verify: an unverified approval unlocks "
                  "no deeper permission")
@@ -247,6 +267,15 @@ def approve_args(argv):
 
 def _approve(argv):
     a = approve_args(argv)
+    if a.standing:
+        entry = _load_entry(a.id)
+        body = standing_body(a.id, grant_for(entry, a.grant, False), _today())
+        summary = (f"{a.id}: every listed version that asks for no more than "
+                   f"{', '.join(body['grant'])} gets them, without its own approval.\n"
+                   f"Players see it as Permissions approved.")
+        return _sign_and_publish("standing", body, f"standing/{a.id}.json",
+                                 f"approve/{a.id}-standing", f"Standing approval for {a.id}",
+                                 summary)
     manifest, tree, sha, source = _checked_package(a.id, a.version, a.zip)
     grant = grant_for(_load_entry(a.id), a.grant, a.no_verify)
     body = approval_body(a.id, a.version, tree, manifest, grant, a.no_verify, _today())
@@ -283,6 +312,8 @@ def _revoke(argv):
     p.add_argument("id")
     p.add_argument("version")
     p = sub.add_parser("id", help="every version stops loading")
+    p.add_argument("id")
+    p = sub.add_parser("standing", help="a standing approval stops counting")
     p.add_argument("id")
     p = sub.add_parser("pass", help="a developer pass stops counting")
     p.add_argument("login")
