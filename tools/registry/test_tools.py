@@ -198,6 +198,116 @@ class StandingTests(unittest.TestCase):
         self.assertTrue(lib.shape_problems("revoked", dict(base, standing=[{"id": "a.b"}])))
 
 
+class AutoReleaseTests(unittest.TestCase):
+    ENTRY = dict(ENTRY, maintainers=["helper"])
+
+    @staticmethod
+    def rel(tag, login="someone", asset="card.zip", draft=False, pre=False):
+        return {"tag_name": tag, "draft": draft, "prerelease": pre, "author": {"login": login},
+                "assets": [{"name": asset}]}
+
+    def test_discover_picks_newer_published_owner_releases(self):
+        found = pr_check.discover(self.ENTRY, [self.rel("v1.2.0", "helper"), self.rel("v1.1.0")])
+        self.assertEqual(found, [{"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"},
+                                 {"version": "1.2.0", "tag": "v1.2.0", "asset": "card.zip"}])
+
+    def test_discover_skips_prerelease_draft_and_strangers(self):
+        rels = [self.rel("v1.1.0", pre=True), self.rel("v1.2.0", draft=True),
+                self.rel("v1.3.0", "stranger"), self.rel("v1.4.0", asset="other.zip")]
+        self.assertEqual(pr_check.discover(self.ENTRY, rels), [])
+
+    def test_discover_skips_older_or_bad_tags(self):
+        rels = [self.rel("v1.0.0"), self.rel("v0.9.0"), self.rel("latest"), self.rel("1.5.0")]
+        self.assertEqual(pr_check.discover(self.ENTRY, rels), [])
+        e = dict(self.ENTRY, versions=[{"version": "1.0.0-beta.2", "tag": "v1.0.0-beta.2",
+                                        "asset": "card.zip"}])
+        self.assertEqual([v["version"] for v in pr_check.discover(e, [self.rel("v1.0.0")])],
+                         ["1.0.0"], "a release is newer than its pre-releases")
+
+    def test_discover_off_when_auto_false(self):
+        e = dict(self.ENTRY, auto=False)
+        self.assertEqual(pr_check.discover(e, [self.rel("v1.1.0")]), [])
+
+    def test_widened_reports_new_permission_and_host(self):
+        last = {"permissions": ["fight"], "network": ["api.example.com"]}
+        new = {"permissions": ["fight", "world"], "network": ["api.example.com", "dps.report"]}
+        self.assertEqual(pr_check.widened(new, last), ["world", "network dps.report"])
+
+    def test_widened_empty_when_within(self):
+        last = {"permissions": ["fight", "world"], "network": ["api.example.com"]}
+        self.assertEqual(pr_check.widened({"permissions": ["fight"], "network": []}, last), [])
+
+    def test_check_entry_accepts_auto_bool_refuses_other(self):
+        self.assertEqual(lib.check_entry(dict(ENTRY, auto=False), "someone.card"), [])
+        self.assertEqual(lib.check_entry(dict(ENTRY, auto="no"), "someone.card"),
+                         ["auto: must be true or false"])
+
+    def test_semver_order(self):
+        order = ["0.9.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta", "1.0.0", "1.0.1", "1.10.0"]
+        self.assertEqual(sorted(reversed(order), key=lib.semver_key), order)
+
+
+class AutoListTests(unittest.TestCase):
+    """publish.auto_list with GitHub faked: releases, the package check and the contents API."""
+
+    def setUp(self):
+        import publish
+        self.publish = publish
+        self.r = Registry(self)
+        self.r.entry(ENTRY)
+        self.r.package("someone.card", "1.0.0", good_files())
+        self.calls = []
+        rels = [AutoReleaseTests.rel(t) for t in ("v1.1.0", "v1.2.0", "v1.3.0")]
+        asks = {"1.1.0": ["fight"], "1.2.0": ["fight", "world"], "1.3.0": ["fight"]}
+
+        def gh_json(path):
+            if path.startswith("repos/someone/card/releases"):
+                return rels
+            if "/contents/" in path:
+                return {"sha": "abc"}
+            raise AssertionError(path)
+
+        def check_version(env, entry, v):
+            return {"id": entry["id"], "version": v["version"], "problems": [],
+                    "permissions": asks[v["version"]], "network": ["api.example.com"]}
+
+        for mod, name, fn in ((publish, "gh_json", gh_json), (publish, "gh", lambda *a, **k: self.calls.append(a)),
+                              (publish.pr_check, "check_version", check_version)):
+            old = getattr(mod, name)
+            setattr(mod, name, fn)
+            self.addCleanup(setattr, mod, name, old)
+
+    def test_lists_within_and_stops_at_a_widened_release(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            added = self.publish.auto_list({"REPO": "darkharasho/axidps-plugins"},
+                                           json.loads(json.dumps(ENTRY)), self.r.packages)
+        self.assertEqual([v["version"] for v in added], ["1.1.0"])
+        self.assertIn("someone.card 1.2.0 asks for world; it needs a pull request", out.getvalue())
+        self.assertEqual(self.calls, [], "nothing is written to the repository")
+
+    def test_nothing_new_when_auto_false(self):
+        e = dict(ENTRY, auto=False)
+        self.assertEqual(self.publish.auto_list({"REPO": "x/y"}, e, self.r.packages), [])
+
+    def test_auto_notes_round_trip(self):
+        v = {"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"}
+        notes = self.publish.mirror_notes(ENTRY, v, "t" * 64, auto=True)
+        rels = [{"tag_name": "someone.card@1.1.0", "body": notes},
+                {"tag_name": "someone.card@1.0.0", "body": self.publish.mirror_notes(
+                    ENTRY, ENTRY["versions"][0], "t" * 64, auto=False)},
+                {"tag_name": "other.x@1.1.0", "body": notes},
+                {"tag_name": "index", "body": "auto-listed: {}"}]
+        self.assertEqual(self.publish.auto_marked(rels), {"someone.card": [v]},
+                         "only a note whose version and id match its own tag counts")
+
+    def test_with_auto_adds_recorded_versions_once(self):
+        v = {"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"}
+        e = self.publish.with_auto(ENTRY, {"someone.card": [v, ENTRY["versions"][0]]})
+        self.assertEqual([x["version"] for x in e["versions"]], ["1.0.0", "1.1.0"])
+        self.assertEqual(len(ENTRY["versions"]), 1, "the entry itself is left alone")
+
+
 class OwnerTests(unittest.TestCase):
     MANIFEST = {"id": "someone.card", "version": "1.0.0", "permissions": ["fight", "world"]}
 

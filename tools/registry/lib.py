@@ -310,6 +310,16 @@ def valid_semver(s):
     return isinstance(s, str) and _SEMVER.fullmatch(s) is not None
 
 
+def semver_key(s):
+    """A sort key giving semantic-version precedence (a pre-release sorts before its release;
+    build metadata is ignored). `s` must be valid."""
+    m = _SEMVER.fullmatch(s)
+    pre = m.group(4)
+    ids = () if pre is None else tuple(
+        (0, int(x), "") if x.isdigit() else (1, 0, x) for x in pre.split("."))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), pre is None, ids)
+
+
 def valid_login(s):
     return isinstance(s, str) and _LOGIN.fullmatch(s) is not None
 
@@ -510,7 +520,7 @@ def _window(w, i, out):
 # ---------------------------------------------------------------- registry entries
 
 ENTRY_FIELDS = ("id", "owner", "maintainers", "repo", "description", "icon", "verify",
-                "elevated", "versions")
+                "elevated", "versions", "auto")
 
 
 def check_entry(entry, file_id):
@@ -541,6 +551,8 @@ def check_entry(entry, file_id):
         out.append(f"icon: must be one of {', '.join(ICONS)}")
     if not isinstance(entry.get("verify", False), bool):
         out.append("verify: must be true or false")
+    if not isinstance(entry.get("auto", True), bool):
+        out.append("auto: must be true or false")
     el = entry.get("elevated")
     if not isinstance(el, list):
         out.append("elevated: list the deeper permissions the plugin needs ([] for none)")
