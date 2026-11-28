@@ -1,0 +1,12 @@
+{
+  "id": "darkharasho.team-breakdown",
+  "version": "0.1.1",
+  "tree": "36f2dbc85d5a0634298d092572e15640765a7b4bf49c057422ed0e76c7df973a",
+  "verified": true,
+  "grant": [
+    "enemies"
+  ],
+  "signed": "2026-11-28",
+  "approver": "d849ed794bf2c1af",
+  "sig": "yoJ8LGdYKzHmUhUR12aFdOsjKhbZ2I0+gHiG9ABZyPfJR+YEFHkFOWaYIvqapY3xAVlGe4yRl2XSKhLmOuXMDQ=="
+}
