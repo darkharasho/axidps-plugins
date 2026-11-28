@@ -36,7 +36,8 @@ def classify(files):
         if re.fullmatch(r"plugins/[a-z0-9.-]+\.json", name):
             out["plugins"].append(f)
         elif (re.fullmatch(r"approvals/[a-z0-9.-]+/[A-Za-z0-9.+-]+\.json", name)
-              or re.fullmatch(r"passes/[A-Za-z0-9-]+\.json", name) or name == "revoked.json"):
+              or re.fullmatch(r"passes/[A-Za-z0-9-]+\.json", name)
+              or re.fullmatch(r"standing/[a-z0-9.-]+\.json", name) or name == "revoked.json"):
             out["signed"].append(f)
         else:
             out["other"].append(f)
@@ -90,6 +91,8 @@ def signed_file_problems(path, obj, keys, base_seq):
         kind = "revoked"
     elif path.startswith("passes/"):
         kind = "pass"
+    elif path.startswith("standing/"):
+        kind = "standing"
     else:
         kind = "approval"
     why = lib.shape_problems(kind, obj)
@@ -99,6 +102,8 @@ def signed_file_problems(path, obj, keys, base_seq):
         why = build_index.approval_path_problems(path, obj)
     elif kind == "pass":
         why = build_index.pass_path_problems(path, obj)
+    elif kind == "standing":
+        why = build_index.standing_path_problems(path, obj)
     elif obj["seq"] <= base_seq:
         why = [f"seq {obj['seq']} must be higher than main's ({base_seq})"]
     if not why and not lib.verify(kind, obj, keys):

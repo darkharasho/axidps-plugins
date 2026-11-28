@@ -160,6 +160,44 @@ class BuildIndexTests(unittest.TestCase):
         self.assertEqual(listing["elevated"], ["textures"])
 
 
+class StandingTests(unittest.TestCase):
+    BODY = {"id": "someone.card", "grant": ["textures"], "signed": TODAY}
+
+    def test_standing_shape(self):
+        self.assertEqual(lib.shape_problems("standing", self.BODY), [])
+        why = lib.shape_problems("standing", {"id": "someone.card", "signed": TODAY})
+        self.assertTrue(why and why[0].startswith("grant:"), why)
+
+    def test_sign_verify_standing(self):
+        obj = lib.sign("standing", self.BODY, SEED7)
+        self.assertTrue(lib.verify("standing", obj, [APPROVER_PUB]))
+        self.assertFalse(lib.verify("approval", obj, [APPROVER_PUB]), "the kind is signed too")
+
+    def test_index_copies_standing(self):
+        r = Registry(self)
+        r.entry(ENTRY)
+        good = r.signed("standing/someone.card.json", "standing", self.BODY)
+        r.signed("standing/other.json", "standing", self.BODY)
+        index, warnings = r.build()
+        self.assertEqual(index["standing"], [good])
+        self.assertTrue(any("standing/other.json refused" in w for w in warnings), warnings)
+
+    def test_classify_standing_is_signed(self):
+        c = pr_check.classify([{"filename": "standing/someone.card.json", "status": "added"}])
+        self.assertEqual(len(c["signed"]), 1)
+        obj = lib.sign("standing", self.BODY, SEED7)
+        self.assertEqual(pr_check.signed_file_problems(
+            "standing/someone.card.json", obj, [APPROVER_PUB], 0), [])
+        self.assertTrue(pr_check.signed_file_problems(
+            "standing/other.json", obj, [APPROVER_PUB], 0))
+
+    def test_revoked_standing_entries_shape(self):
+        base = {"seq": 1, "versions": [], "verifications": [], "ids": [], "passes": []}
+        self.assertEqual(lib.shape_problems(
+            "revoked", dict(base, standing=[{"id": "a.b", "reason": "r"}])), [])
+        self.assertTrue(lib.shape_problems("revoked", dict(base, standing=[{"id": "a.b"}])))
+
+
 class OwnerTests(unittest.TestCase):
     MANIFEST = {"id": "someone.card", "version": "1.0.0", "permissions": ["fight", "world"]}
 

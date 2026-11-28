@@ -22,7 +22,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 ZIP_CAP = MAX_UNPACKED + 1024 * 1024
 SUPPORTED_API = 1
 INDEX_PREFIX = b"axidps-index-v1\n"
-KINDS = ("approval", "pass", "revoked")
+KINDS = ("approval", "pass", "revoked", "standing")
 REGISTRY = "darkharasho/axidps-plugins"
 PACKAGE_PREFIX = f"https://github.com/{REGISTRY}/releases/download/"
 ICONS = ("chart", "users", "shield", "swords", "activity", "x", "grid", "layers", "sliders",
@@ -265,7 +265,7 @@ def _entries(o, f, fields, out):
 
 
 def shape_problems(kind, o):
-    """The fields trust.rs needs for an approval, pass or revoked object, as it parses them."""
+    """The fields trust.rs needs for an approval, pass, revoked or standing object, as it parses them."""
     out = []
     if not isinstance(o, dict):
         return ["not an object"]
@@ -290,6 +290,11 @@ def shape_problems(kind, o):
         _entries(o, "verifications", ("id", "version", "reason"), out)
         _entries(o, "ids", ("id", "reason"), out)
         _entries(o, "passes", ("login", "key", "reason"), out)
+        _entries(o, "standing", ("id", "reason"), out)
+    elif kind == "standing":
+        for f in ("id", "signed"):
+            _need(o, f, str, out)
+        _strings(o, "grant", out)
     else:
         out.append(f"unknown kind {kind}")
     return out
