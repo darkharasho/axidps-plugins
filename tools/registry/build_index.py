@@ -8,7 +8,7 @@ with the index key from the INDEX_KEY environment variable (a PKCS#8 PEM; CI onl
 <dir> holds one `<id>@<version>.zip` per mirrored version. Writes <out>/index.json and
 <out>/index.json.sig. With --previous, an index that differs only in `generated` keeps the old
 time, so its bytes (and signature) don't change. Approvals, passes and revoked.json are copied
-only if they verify against keys/approvers.txt; the client checks them again itself."""
+only if they verify against keys/approvers.txt (standing approvals too); the client checks them again itself."""
 
 import argparse
 import datetime
@@ -91,6 +91,11 @@ def pass_path_problems(rel, obj):
     return [] if rel == want else [f"it is the pass of {obj.get('login')}, not {rel}"]
 
 
+def standing_path_problems(rel, obj):
+    want = f"standing/{obj.get('id')}.json"
+    return [] if rel == want else [f"it is the standing approval of {obj.get('id')}, not {rel}"]
+
+
 def build(root, packages, generated):
     """(index, warnings): the index object and one line per thing left out."""
     warnings = []
@@ -125,12 +130,19 @@ def build(root, packages, generated):
                       lambda o, rel=rel: pass_path_problems(rel, o))
         if obj:
             passes.append(obj)
+    standing = []
+    for path in sorted(glob.glob(os.path.join(root, "standing", "*.json"))):
+        rel = os.path.relpath(path, root).replace(os.sep, "/")
+        obj = _signed("standing", path, rel, keys, warnings,
+                      lambda o, rel=rel: standing_path_problems(rel, o))
+        if obj:
+            standing.append(obj)
     revoked = None
     rpath = os.path.join(root, "revoked.json")
     if os.path.isfile(rpath):
         revoked = _signed("revoked", rpath, "revoked.json", keys, warnings, lambda o: [])
     return {"generated": generated, "plugins": plugins, "approvals": approvals,
-            "passes": passes, "revoked": revoked}, warnings
+            "passes": passes, "standing": standing, "revoked": revoked}, warnings
 
 
 def render(index):

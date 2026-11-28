@@ -22,7 +22,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 ZIP_CAP = MAX_UNPACKED + 1024 * 1024
 SUPPORTED_API = 1
 INDEX_PREFIX = b"axidps-index-v1\n"
-KINDS = ("approval", "pass", "revoked")
+KINDS = ("approval", "pass", "revoked", "standing")
 REGISTRY = "darkharasho/axidps-plugins"
 PACKAGE_PREFIX = f"https://github.com/{REGISTRY}/releases/download/"
 ICONS = ("chart", "users", "shield", "swords", "activity", "x", "grid", "layers", "sliders",
@@ -265,7 +265,7 @@ def _entries(o, f, fields, out):
 
 
 def shape_problems(kind, o):
-    """The fields trust.rs needs for an approval, pass or revoked object, as it parses them."""
+    """The fields trust.rs needs for an approval, pass, revoked or standing object, as it parses them."""
     out = []
     if not isinstance(o, dict):
         return ["not an object"]
@@ -290,6 +290,11 @@ def shape_problems(kind, o):
         _entries(o, "verifications", ("id", "version", "reason"), out)
         _entries(o, "ids", ("id", "reason"), out)
         _entries(o, "passes", ("login", "key", "reason"), out)
+        _entries(o, "standing", ("id", "sig", "reason"), out)
+    elif kind == "standing":
+        for f in ("id", "signed"):
+            _need(o, f, str, out)
+        _strings(o, "grant", out)
     else:
         out.append(f"unknown kind {kind}")
     return out
@@ -303,6 +308,16 @@ def valid_id(s):
 
 def valid_semver(s):
     return isinstance(s, str) and _SEMVER.fullmatch(s) is not None
+
+
+def semver_key(s):
+    """A sort key giving semantic-version precedence (a pre-release sorts before its release;
+    build metadata is ignored). `s` must be valid."""
+    m = _SEMVER.fullmatch(s)
+    pre = m.group(4)
+    ids = () if pre is None else tuple(
+        (0, int(x), "") if x.isdigit() else (1, 0, x) for x in pre.split("."))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), pre is None, ids)
 
 
 def valid_login(s):
@@ -505,7 +520,7 @@ def _window(w, i, out):
 # ---------------------------------------------------------------- registry entries
 
 ENTRY_FIELDS = ("id", "owner", "maintainers", "repo", "description", "icon", "verify",
-                "elevated", "versions")
+                "elevated", "versions", "auto")
 
 
 def check_entry(entry, file_id):
@@ -536,6 +551,8 @@ def check_entry(entry, file_id):
         out.append(f"icon: must be one of {', '.join(ICONS)}")
     if not isinstance(entry.get("verify", False), bool):
         out.append("verify: must be true or false")
+    if not isinstance(entry.get("auto", True), bool):
+        out.append("auto: must be true or false")
     el = entry.get("elevated")
     if not isinstance(el, list):
         out.append("elevated: list the deeper permissions the plugin needs ([] for none)")

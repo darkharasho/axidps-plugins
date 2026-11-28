@@ -160,6 +160,197 @@ class BuildIndexTests(unittest.TestCase):
         self.assertEqual(listing["elevated"], ["textures"])
 
 
+class StandingTests(unittest.TestCase):
+    BODY = {"id": "someone.card", "grant": ["textures"], "signed": TODAY}
+
+    def test_standing_shape(self):
+        self.assertEqual(lib.shape_problems("standing", self.BODY), [])
+        why = lib.shape_problems("standing", {"id": "someone.card", "signed": TODAY})
+        self.assertTrue(why and why[0].startswith("grant:"), why)
+
+    def test_sign_verify_standing(self):
+        obj = lib.sign("standing", self.BODY, SEED7)
+        self.assertTrue(lib.verify("standing", obj, [APPROVER_PUB]))
+        self.assertFalse(lib.verify("approval", obj, [APPROVER_PUB]), "the kind is signed too")
+
+    def test_index_copies_standing(self):
+        r = Registry(self)
+        r.entry(ENTRY)
+        good = r.signed("standing/someone.card.json", "standing", self.BODY)
+        r.signed("standing/other.json", "standing", self.BODY)
+        index, warnings = r.build()
+        self.assertEqual(index["standing"], [good])
+        self.assertTrue(any("standing/other.json refused" in w for w in warnings), warnings)
+
+    def test_classify_standing_is_signed(self):
+        c = pr_check.classify([{"filename": "standing/someone.card.json", "status": "added"}])
+        self.assertEqual(len(c["signed"]), 1)
+        obj = lib.sign("standing", self.BODY, SEED7)
+        self.assertEqual(pr_check.signed_file_problems(
+            "standing/someone.card.json", obj, [APPROVER_PUB], 0), [])
+        self.assertTrue(pr_check.signed_file_problems(
+            "standing/other.json", obj, [APPROVER_PUB], 0))
+
+    def test_revoked_standing_entries_shape(self):
+        base = {"seq": 1, "versions": [], "verifications": [], "ids": [], "passes": []}
+        self.assertEqual(lib.shape_problems(
+            "revoked", dict(base, standing=[{"id": "a.b", "sig": "c2ln", "reason": "r"}])), [])
+        self.assertTrue(lib.shape_problems(
+            "revoked", dict(base, standing=[{"id": "a.b", "reason": "r"}])), "names the object")
+
+
+class StandingOwnerTests(unittest.TestCase):
+    def test_standing_body_defaults_and_sorts(self):
+        body = owner.standing_body("someone.card", ["world", "textures", "world"], TODAY)
+        self.assertEqual(body, {"id": "someone.card", "grant": ["textures", "world"], "signed": TODAY})
+        self.assertEqual(lib.shape_problems("standing", body), [])
+
+    def test_standing_body_refuses_empty(self):
+        with self.assertRaises(owner.Refused):
+            owner.standing_body("someone.card", [], TODAY)
+        with self.assertRaises(owner.Refused):
+            owner.standing_body("someone.card", ["fight"], TODAY)
+
+    def test_approve_args_standing_without_version(self):
+        a = owner.approve_args(["someone.card", "--standing"])
+        self.assertTrue(a.standing)
+        self.assertIsNone(a.version)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            owner.approve_args(["someone.card"])
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            owner.approve_args(["someone.card", "1.0.0", "--standing"])
+
+    def test_replacing_a_standing_approval_revokes_the_old_one(self):
+        new = owner.standing_body("someone.card", ["textures"], TODAY)
+        old = lib.sign("standing", dict(new, grant=["textures", "world"]), SEED7)
+        files = owner.standing_files("someone.card", new, old, {"seq": 5})
+        self.assertEqual(files["standing/someone.card.json"], ("standing", new))
+        kind, rev = files["revoked.json"]
+        self.assertEqual(kind, "revoked")
+        self.assertEqual(rev["seq"], 6)
+        self.assertEqual(rev["standing"], [{"id": "someone.card", "sig": old["sig"],
+                                            "reason": "replaced by a newer standing approval"}])
+        self.assertEqual(set(owner.standing_files("someone.card", new, None, {"seq": 5})),
+                         {"standing/someone.card.json"}, "a first one revokes nothing")
+
+    def test_revoke_standing_entry(self):
+        body = owner.revoke_body({"seq": 3}, "standing", {"id": "someone.card", "sig": "c2ln"}, "taken over")
+        self.assertEqual(body["standing"], [{"id": "someone.card", "sig": "c2ln", "reason": "taken over"}])
+        self.assertEqual(body["seq"], 4)
+        self.assertEqual(lib.shape_problems("revoked", body), [])
+
+
+class AutoReleaseTests(unittest.TestCase):
+    ENTRY = dict(ENTRY, maintainers=["helper"])
+
+    @staticmethod
+    def rel(tag, login="someone", asset="card.zip", draft=False, pre=False):
+        return {"tag_name": tag, "draft": draft, "prerelease": pre, "author": {"login": login},
+                "assets": [{"name": asset}]}
+
+    def test_discover_picks_newer_published_owner_releases(self):
+        found = pr_check.discover(self.ENTRY, [self.rel("v1.2.0", "helper"), self.rel("v1.1.0")])
+        self.assertEqual(found, [{"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"},
+                                 {"version": "1.2.0", "tag": "v1.2.0", "asset": "card.zip"}])
+
+    def test_discover_skips_prerelease_draft_and_strangers(self):
+        rels = [self.rel("v1.1.0", pre=True), self.rel("v1.2.0", draft=True),
+                self.rel("v1.3.0", "stranger"), self.rel("v1.4.0", asset="other.zip")]
+        self.assertEqual(pr_check.discover(self.ENTRY, rels), [])
+
+    def test_discover_skips_older_or_bad_tags(self):
+        rels = [self.rel("v1.0.0"), self.rel("v0.9.0"), self.rel("latest"), self.rel("1.5.0")]
+        self.assertEqual(pr_check.discover(self.ENTRY, rels), [])
+        e = dict(self.ENTRY, versions=[{"version": "1.0.0-beta.2", "tag": "v1.0.0-beta.2",
+                                        "asset": "card.zip"}])
+        self.assertEqual([v["version"] for v in pr_check.discover(e, [self.rel("v1.0.0")])],
+                         ["1.0.0"], "a release is newer than its pre-releases")
+
+    def test_discover_off_when_auto_false(self):
+        e = dict(self.ENTRY, auto=False)
+        self.assertEqual(pr_check.discover(e, [self.rel("v1.1.0")]), [])
+
+    def test_widened_reports_new_permission_and_host(self):
+        last = {"permissions": ["fight"], "network": ["api.example.com"]}
+        new = {"permissions": ["fight", "world"], "network": ["api.example.com", "dps.report"]}
+        self.assertEqual(pr_check.widened(new, last), ["world", "network dps.report"])
+
+    def test_widened_empty_when_within(self):
+        last = {"permissions": ["fight", "world"], "network": ["api.example.com"]}
+        self.assertEqual(pr_check.widened({"permissions": ["fight"], "network": []}, last), [])
+
+    def test_check_entry_accepts_auto_bool_refuses_other(self):
+        self.assertEqual(lib.check_entry(dict(ENTRY, auto=False), "someone.card"), [])
+        self.assertEqual(lib.check_entry(dict(ENTRY, auto="no"), "someone.card"),
+                         ["auto: must be true or false"])
+
+    def test_semver_order(self):
+        order = ["0.9.0", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-beta", "1.0.0", "1.0.1", "1.10.0"]
+        self.assertEqual(sorted(reversed(order), key=lib.semver_key), order)
+
+
+class AutoListTests(unittest.TestCase):
+    """publish.auto_list with GitHub faked: releases, the package check and the contents API."""
+
+    def setUp(self):
+        import publish
+        self.publish = publish
+        self.r = Registry(self)
+        self.r.entry(ENTRY)
+        self.r.package("someone.card", "1.0.0", good_files())
+        self.calls = []
+        rels = [AutoReleaseTests.rel(t) for t in ("v1.1.0", "v1.2.0", "v1.3.0")]
+        asks = {"1.1.0": ["fight"], "1.2.0": ["fight", "world"], "1.3.0": ["fight"]}
+
+        def gh_json(path):
+            if path.startswith("repos/someone/card/releases"):
+                return rels
+            if "/contents/" in path:
+                return {"sha": "abc"}
+            raise AssertionError(path)
+
+        def check_version(env, entry, v):
+            return {"id": entry["id"], "version": v["version"], "problems": [], "tree": "tree-" + v["version"],
+                    "permissions": asks[v["version"]], "network": ["api.example.com"]}
+
+        for mod, name, fn in ((publish, "gh_json", gh_json), (publish, "gh", lambda *a, **k: self.calls.append(a)),
+                              (publish.pr_check, "check_version", check_version)):
+            old = getattr(mod, name)
+            setattr(mod, name, fn)
+            self.addCleanup(setattr, mod, name, old)
+
+    def test_lists_within_and_stops_at_a_widened_release(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            added = self.publish.auto_list({"REPO": "darkharasho/axidps-plugins"},
+                                           json.loads(json.dumps(ENTRY)), self.r.packages)
+        self.assertEqual([v["version"] for v, _ in added], ["1.1.0"])
+        self.assertEqual([t for _, t in added], ["tree-1.1.0"], "the checked files' tree")
+        self.assertIn("someone.card 1.2.0 asks for world; it needs a pull request", out.getvalue())
+        self.assertEqual(self.calls, [], "nothing is written to the repository")
+
+    def test_nothing_new_when_auto_false(self):
+        e = dict(ENTRY, auto=False)
+        self.assertEqual(self.publish.auto_list({"REPO": "x/y"}, e, self.r.packages), [])
+
+    def test_auto_notes_round_trip(self):
+        v = {"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"}
+        notes = self.publish.mirror_notes(ENTRY, v, "t" * 64, auto=True)
+        rels = [{"tag_name": "someone.card@1.1.0", "body": notes},
+                {"tag_name": "someone.card@1.0.0", "body": self.publish.mirror_notes(
+                    ENTRY, ENTRY["versions"][0], "t" * 64, auto=False)},
+                {"tag_name": "other.x@1.1.0", "body": notes},
+                {"tag_name": "index", "body": "auto-listed: {}"}]
+        self.assertEqual(self.publish.auto_marked(rels), {"someone.card": [v]},
+                         "only a note whose version and id match its own tag counts")
+
+    def test_with_auto_adds_recorded_versions_once(self):
+        v = {"version": "1.1.0", "tag": "v1.1.0", "asset": "card.zip"}
+        e = self.publish.with_auto(ENTRY, {"someone.card": [v, ENTRY["versions"][0]]})
+        self.assertEqual([x["version"] for x in e["versions"]], ["1.0.0", "1.1.0"])
+        self.assertEqual(len(ENTRY["versions"]), 1, "the entry itself is left alone")
+
+
 class OwnerTests(unittest.TestCase):
     MANIFEST = {"id": "someone.card", "version": "1.0.0", "permissions": ["fight", "world"]}
 
@@ -403,3 +594,40 @@ class PortFixtures(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WriteEntryTests(unittest.TestCase):
+    def test_write_entry_refuses_outside_ci(self):
+        import publish
+        old = os.environ.pop("GITHUB_ACTIONS", None)
+        self.addCleanup(lambda: old is None or os.environ.__setitem__("GITHUB_ACTIONS", old))
+        with self.assertRaises(RuntimeError):
+            publish.write_entry(dict(ENTRY))
+        self.assertFalse(os.path.exists(os.path.join(os.getcwd(), "plugins", "someone.card.json")))
+
+
+class MirrorTreeTests(unittest.TestCase):
+    def test_mirror_refuses_files_other_than_the_checked_ones(self):
+        import publish
+        r = Registry(self)
+        made = []
+        zpath = os.path.join(r.packages, "src.zip")
+        write(zpath, zip_of(good_files({"version": "1.0.0"})))
+        patches = ((publish.pr_check, "author_release", lambda e, v: ({}, {"name": "card.zip"})),
+                   (publish.pr_check, "download_asset", lambda repo, a, d: __import__("shutil").copy(zpath, d) and os.path.join(d, "src.zip")),
+                   (publish, "gh", lambda *a, **k: made.append(a)))
+        for mod, name, fn in patches:
+            old = getattr(mod, name)
+            setattr(mod, name, fn)
+            self.addCleanup(setattr, mod, name, old)
+        v = ENTRY["versions"][0]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ok = publish.mirror("x/y", ENTRY, v, r.packages, "sha", auto=True, tree="f" * 64)
+        self.assertFalse(ok)
+        self.assertEqual(made, [], "nothing mirrored")
+        self.assertIn("aren't the files that were checked", out.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()):
+            ok = publish.mirror("x/y", ENTRY, v, r.packages, "sha", auto=True,
+                                tree=lib.tree_hash(good_files({"version": "1.0.0"})))
+        self.assertTrue(ok)

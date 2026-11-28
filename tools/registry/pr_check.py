@@ -36,7 +36,8 @@ def classify(files):
         if re.fullmatch(r"plugins/[a-z0-9.-]+\.json", name):
             out["plugins"].append(f)
         elif (re.fullmatch(r"approvals/[a-z0-9.-]+/[A-Za-z0-9.+-]+\.json", name)
-              or re.fullmatch(r"passes/[A-Za-z0-9-]+\.json", name) or name == "revoked.json"):
+              or re.fullmatch(r"passes/[A-Za-z0-9-]+\.json", name)
+              or re.fullmatch(r"standing/[a-z0-9.-]+\.json", name) or name == "revoked.json"):
             out["signed"].append(f)
         else:
             out["other"].append(f)
@@ -80,6 +81,38 @@ def release_author_ok(entry, release):
     return isinstance(login, str) and login.lower() in _logins(entry)
 
 
+def discover(entry, releases):
+    """The versions to list automatically from `releases` (the GitHub API list for
+    `entry.repo`), oldest first: published (not a draft or pre-release) by the owner or a
+    maintainer, tagged `v<semver>` newer than every listed version, with the asset the newest
+    listed version uses. None when the entry turns this off with `"auto": false`."""
+    listed = entry.get("versions") or []
+    if entry.get("auto") is False or not listed:
+        return []
+    newest = max(listed, key=lambda v: lib.semver_key(v["version"]))
+    found = {}
+    for rel in releases or []:
+        tag = rel.get("tag_name")
+        if (rel.get("draft") is not False or rel.get("prerelease") is not False
+                or not release_author_ok(entry, rel) or not isinstance(tag, str)
+                or not tag.startswith("v") or not lib.valid_semver(tag[1:])):
+            continue
+        ver = tag[1:]
+        if lib.semver_key(ver) <= lib.semver_key(newest["version"]):
+            continue
+        if not any(a.get("name") == newest["asset"] for a in rel.get("assets") or []):
+            continue
+        found[ver] = {"version": ver, "tag": tag, "asset": newest["asset"]}
+    return [found[k] for k in sorted(found, key=lib.semver_key)]
+
+
+def widened(new, last):
+    """What manifest `new` asks for that `last` didn't: permissions, then `network <host>`."""
+    perms = [p for p in new.get("permissions") or [] if p not in (last.get("permissions") or [])]
+    hosts = [f"network {h}" for h in new.get("network") or [] if h not in (last.get("network") or [])]
+    return perms + hosts
+
+
 def auto_merge(plugins_only, problems, deeper, verify, setting):
     return (plugins_only and not problems and not deeper and not verify
             and (setting or "").strip().lower() != "off")
@@ -90,6 +123,8 @@ def signed_file_problems(path, obj, keys, base_seq):
         kind = "revoked"
     elif path.startswith("passes/"):
         kind = "pass"
+    elif path.startswith("standing/"):
+        kind = "standing"
     else:
         kind = "approval"
     why = lib.shape_problems(kind, obj)
@@ -99,6 +134,8 @@ def signed_file_problems(path, obj, keys, base_seq):
         why = build_index.approval_path_problems(path, obj)
     elif kind == "pass":
         why = build_index.pass_path_problems(path, obj)
+    elif kind == "standing":
+        why = build_index.standing_path_problems(path, obj)
     elif obj["seq"] <= base_seq:
         why = [f"seq {obj['seq']} must be higher than main's ({base_seq})"]
     if not why and not lib.verify(kind, obj, keys):

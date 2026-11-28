@@ -55,14 +55,34 @@ automatically.
 Once merged, the registry mirrors the zip to its own release `<id>@<version>`, so installs keep
 working even if your repository changes. The version then appears in the store as Unverified.
 
+## Later versions: just publish a release
+
+After the first pull request, you don't need one per version. Every hour the registry looks at
+your repository's releases and lists a new one by itself when:
+
+- it is published (not a draft or pre-release) by you or a maintainer;
+- its tag is `v` and a version newer than every listed one, like `v1.3.0`;
+- it has an asset with the same name as your newest listed version's (`dps-card.zip`);
+- it passes the same package checks as a pull request;
+- its manifest asks for no permission and no network host that your newest listed version
+  didn't ask for.
+
+A release that asks for more is skipped, with a warning in the registry's Publish run. Add it
+with a pull request as in step 3. Set `"auto": false` in your entry to turn this off.
+
 ## Verification and deeper permissions
 
 Set `"verify": true` to ask for verification. The owner reviews the package against
 [the checklist](verification.md). A verified version gets the Verified badge.
 
 The deeper permissions are `world`, `position`, `squad`, `enemies` and `textures`. A version
-that asks for any of them can still be listed, but it won't load until the owner approves
-that exact version and grants them.
+that asks for any of them can still be listed, but it won't load until the owner approves it.
+The owner can approve one version (it gets Verified), or give the plugin a **standing
+approval** for those permissions. With a standing approval, every later version that asks for
+no more loads with them as soon as it is listed. The store shows it as **Permissions approved**
+rather than Verified, because nobody read that version's code.
+A new standing approval replaces the old one and revokes it, so a narrower grant takes effect
+everywhere.
 
 List the ones your plugin needs in the entry's `"elevated"`, for example
 `"elevated": ["textures"]`, or `[]` if it needs none. CI fails a new version whose manifest asks
