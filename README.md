@@ -48,7 +48,7 @@ tools/registry/pass <login> --key <base64> --ids someone.*,other.id --grant worl
 tools/registry/revoke version <id> <version> --reason "..."
 tools/registry/revoke verification <id> <version> --reason "..."
 tools/registry/revoke id <id> --reason "..."
-tools/registry/revoke standing <id> --reason "..."
+tools/registry/revoke standing <id> [--sig <sig>] --reason "..."
 tools/registry/revoke pass <login> --reason "..."
 ```
 

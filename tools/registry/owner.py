@@ -81,7 +81,7 @@ REVOKE_FIELDS = {
     "version": ("id", "version", "tree"),
     "verification": ("id", "version"),
     "id": ("id",),
-    "standing": ("id",),
+    "standing": ("id", "sig"),
     "pass": ("login", "key"),
 }
 REVOKE_LISTS = {"version": "versions", "verification": "verifications", "id": "ids",
@@ -97,6 +97,18 @@ def standing_body(pid, grant, today):
     if bad:
         raise Refused(f"not deeper permissions: {', '.join(bad)}")
     return {"id": pid, "grant": grant, "signed": today}
+
+
+def standing_files(pid, body, old, revoked):
+    """{path: (kind, unsigned body)} for a standing approval: its file, and when it replaces a
+    signed one, revoked.json revoking that exact object (else the old, maybe wider, grant could
+    be served again)."""
+    files = {f"standing/{pid}.json": ("standing", body)}
+    if old and isinstance(old.get("sig"), str):
+        files["revoked.json"] = ("revoked", revoke_body(
+            revoked, "standing", {"id": pid, "sig": old["sig"]},
+            "replaced by a newer standing approval"))
+    return files
 
 
 def revoke_body(revoked, what, fields, reason):
@@ -230,6 +242,30 @@ def _sign_and_publish(kind, body, rel, branch, message, summary):
     return 0
 
 
+def _sign_many(files, branch, message, summary):
+    """Signs every `{path: (kind, body)}` with one read of the key and publishes them together."""
+    shown = "\n\n".join(f"{kind} to sign ({rel}):\n{json.dumps(body, indent=2)}"
+                         for rel, (kind, body) in files.items())
+    if not confirm(f"{summary}\n\n{shown}\n"):
+        print("Nothing signed.")
+        return 1
+    key = read_key()
+    signed = {rel: lib.sign(kind, body, key) for rel, (kind, body) in files.items()}
+    del key
+    publish(branch, signed, message)
+    return 0
+
+
+def _read_json(rel):
+    try:
+        with open(os.path.join(ROOT, rel), "rb") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        raise Refused(f"{rel} can't be read; fix it first") from None
+
+
 def _run(fn, argv):
     try:
         _ready()
@@ -270,12 +306,18 @@ def _approve(argv):
     if a.standing:
         entry = _load_entry(a.id)
         body = standing_body(a.id, grant_for(entry, a.grant, False), _today())
+        old = _read_json(f"standing/{a.id}.json")
+        revoked = _read_json("revoked.json") or {}
+        keys = lib.load_approvers(os.path.join(ROOT, "keys", "approvers.txt"))
+        if old and "sig" in revoked and not lib.verify("revoked", revoked, keys):
+            raise Refused("the current revoked.json doesn't verify; fix that first")
+        files = standing_files(a.id, body, old, revoked)
         summary = (f"{a.id}: every listed version that asks for no more than "
                    f"{', '.join(body['grant'])} gets them, without its own approval.\n"
-                   f"Players see it as Permissions approved.")
-        return _sign_and_publish("standing", body, f"standing/{a.id}.json",
-                                 f"approve/{a.id}-standing", f"Standing approval for {a.id}",
-                                 summary)
+                   f"Players see it as Permissions approved."
+                   + ("\nThe old standing approval is revoked in the same change." if len(files) > 1 else ""))
+        return _sign_many(files, f"approve/{a.id}-standing", f"Standing approval for {a.id}",
+                          summary)
     manifest, tree, sha, source = _checked_package(a.id, a.version, a.zip)
     grant = grant_for(_load_entry(a.id), a.grant, a.no_verify)
     body = approval_body(a.id, a.version, tree, manifest, grant, a.no_verify, _today())
@@ -315,13 +357,18 @@ def _revoke(argv):
     p.add_argument("id")
     p = sub.add_parser("standing", help="a standing approval stops counting")
     p.add_argument("id")
+    p.add_argument("--sig", help="the approval's sig (default: from standing/<id>.json)")
     p = sub.add_parser("pass", help="a developer pass stops counting")
     p.add_argument("login")
     p.add_argument("--key", help="the pass's key (default: from passes/<login>.json)")
     for p in sub.choices.values():
         p.add_argument("--reason", required=True)
     a = ap.parse_args(argv)
-    fields = {k: getattr(a, k, None) for k in ("id", "version", "login", "key", "tree")}
+    fields = {k: getattr(a, k, None) for k in ("id", "version", "login", "key", "tree", "sig")}
+    if a.what == "standing" and not fields["sig"]:
+        fields["sig"] = (_read_json(f"standing/{a.id}.json") or {}).get("sig")
+        if not isinstance(fields["sig"], str):
+            raise Refused(f"no signed standing/{a.id}.json; give --sig")
     if a.what == "version" and not fields["tree"]:
         fields["tree"] = _checked_package(a.id, a.version, None)[1]
     if a.what == "version" and not re.fullmatch(r"[0-9a-f]{64}", fields["tree"]):
@@ -341,7 +388,7 @@ def _revoke(argv):
     if "sig" in current and not lib.verify("revoked", current, keys):
         raise Refused("the current revoked.json doesn't verify; fix that first")
     body = revoke_body(current, a.what, fields, a.reason)
-    label = " ".join(str(fields[f]) for f in REVOKE_FIELDS[a.what] if f != "key")
+    label = " ".join(str(fields[f]) for f in REVOKE_FIELDS[a.what] if f not in ("key", "sig"))
     return _sign_and_publish("revoked", body, "revoked.json", f"revoke/{body['seq']}",
                              f"Revoke {a.what} {label}", f"revoked.json seq {body['seq']}")
 

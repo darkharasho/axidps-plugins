@@ -81,6 +81,8 @@ The owner can approve one version (it gets Verified), or give the plugin a **sta
 approval** for those permissions. With a standing approval, every later version that asks for
 no more loads with them as soon as it is listed. The store shows it as **Permissions approved**
 rather than Verified, because nobody read that version's code.
+A new standing approval replaces the old one and revokes it, so a narrower grant takes effect
+everywhere.
 
 List the ones your plugin needs in the entry's `"elevated"`, for example
 `"elevated": ["textures"]`, or `[]` if it needs none. CI fails a new version whose manifest asks

@@ -290,7 +290,7 @@ def shape_problems(kind, o):
         _entries(o, "verifications", ("id", "version", "reason"), out)
         _entries(o, "ids", ("id", "reason"), out)
         _entries(o, "passes", ("login", "key", "reason"), out)
-        _entries(o, "standing", ("id", "reason"), out)
+        _entries(o, "standing", ("id", "sig", "reason"), out)
     elif kind == "standing":
         for f in ("id", "signed"):
             _need(o, f, str, out)

@@ -39,8 +39,9 @@ def mirrored(repo, tag, name, packages):
     return True
 
 
-def mirror(repo, entry, v, packages, sha, auto=False):
-    """Copies the author's zip to a new release `<id>@<version>` after checking it again."""
+def mirror(repo, entry, v, packages, sha, auto=False, tree=None):
+    """Copies the author's zip to a new release `<id>@<version>` after checking it again. With
+    `tree`, the zip's files must be exactly those (the ones auto_list checked)."""
     pid, ver = entry["id"], v["version"]
     tag, name = lib.mirror_tag(pid, ver), lib.asset_name(pid, ver)
     try:
@@ -54,13 +55,16 @@ def mirror(repo, entry, v, packages, sha, auto=False):
         except (ValueError, RuntimeError) as e:
             warn(f"{pid} {ver} not mirrored: {e}")
             return False
-        _, tree, _, problems = lib.check_package(path, entry, ver)
+        _, got, _, problems = lib.check_package(path, entry, ver)
         if problems:
             warn(f"{pid} {ver} not mirrored: {'; '.join(problems)}")
             return False
+        if tree is not None and got != tree:
+            warn(f"{pid} {ver} not mirrored: its files aren't the files that were checked")
+            return False
         named = os.path.join(d, name)
         os.rename(path, named)
-        notes = mirror_notes(entry, v, tree, auto)
+        notes = mirror_notes(entry, v, got, auto)
         gh("release", "create", tag, named, "-R", repo, "--target", sha, "--latest=false",
            "--title", f"{pid} {ver}", "--notes", notes)
         shutil.copy(named, os.path.join(packages, tag + ".zip"))
@@ -117,7 +121,8 @@ def auto_list(env, entry, packages):
     """The entry's new releases (pr_check.discover) that pass the package checks and ask for
     nothing beyond the newest listed version, in order, stopping at the first that asks for
     more: that one needs a pull request. The newest listed version must already be in
-    `packages`. Adds them to `entry` and returns them; the caller mirrors them as auto-listed."""
+    `packages`. Adds them to `entry` and returns `(version, tree)` pairs, `tree` being the checked
+    files' tree hash; the caller mirrors them as auto-listed, only if the files are the same."""
     pid = entry["id"]
     if entry.get("auto") is False:
         return []
@@ -146,7 +151,7 @@ def auto_list(env, entry, packages):
             warn(f"{pid} {v['version']} asks for {', '.join(more)}; it needs a pull request")
             break
         entry["versions"].append(v)
-        added.append(v)
+        added.append((v, r["tree"]))
         last = r
     return added
 
@@ -154,6 +159,8 @@ def auto_list(env, entry, packages):
 def write_entry(entry):
     """Writes `entry`, auto-listed versions included, into the local checkout so this run's
     index lists them. Never pushed: the mirror releases are the record."""
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        raise RuntimeError("write_entry only runs in the Publish workflow's checkout")
     with open(os.path.join(os.getcwd(), "plugins", entry["id"] + ".json"), "w", encoding="utf-8") as f:
         json.dump(entry, f, indent=2)
 
@@ -183,8 +190,8 @@ def main(env):
                 tag = lib.mirror_tag(entry["id"], v["version"])
                 if not mirrored(repo, tag, lib.asset_name(entry["id"], v["version"]), packages):
                     mirror(repo, entry, v, packages, sha)
-            for v in auto_list(env, entry, packages):
-                mirror(repo, entry, v, packages, sha, auto=True)
+            for v, tree in auto_list(env, entry, packages):
+                mirror(repo, entry, v, packages, sha, auto=True, tree=tree)
             write_entry(entry)
         previous = os.path.join(prev, "index.json")
         try:
